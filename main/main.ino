@@ -13,150 +13,147 @@
 #define READ_PORT(PORT_NAME)              (PORT_NAME & 0xFF)
 
 /* ------------------ Pin Definitions ------------------ */
-
-// Motor A (Right side)
-#define IN1_PORT PORTD
-#define IN1_DDR  DDRD
+// Motor A (Right)
 #define IN1_PIN  PD2
-
-#define IN2_PORT PORTD
-#define IN2_DDR  DDRD
 #define IN2_PIN  PD3
+#define ENA_PIN  PD6  // OC0A
 
-#define ENA_DDR   DDRD
-#define ENA_PIN   PD6  // OC0A
-
-// Motor B (Left side)
-#define IN3_PORT PORTD
-#define IN3_DDR  DDRD
+// Motor B (Left)
 #define IN3_PIN  PD4
+#define IN4_PIN  PD5
+#define ENB_PIN  PD7  // OC0B
 
-#define IN4_PORT PORTD
-#define IN4_DDR  DDRD
-#define IN4_PIN  PD7
+// Ultrasonic
+#define TRIG_PIN PB0
+#define ECHO_PIN PB1
 
-#define ENB_DDR   DDRD
-#define ENB_PIN   PD5  // OC0B
+/* ------------------ UART Functions ------------------ */
+void uart_init(unsigned int ubrr) {
+    UBRR0H = (unsigned char)(ubrr >> 8);
+    UBRR0L = (unsigned char)(ubrr);
+    SET_BIT(UCSR0B, RXEN0);
+    SET_BIT(UCSR0B, TXEN0);
+    UCSR0C = (1 << UCSZ01) | (1 << UCSZ00); // 8-bit data
+}
 
-/* ------------------ Direction Macros ------------------ */
-#define DIR_FORWARD  0
-#define DIR_BACKWARD 1
-#define DIR_LEFT     2
-#define DIR_RIGHT    3
-#define DIR_STOP     4
+void uart_transmit(char data) {
+    while (!(UCSR0A & (1 << UDRE0)));
+    UDR0 = data;
+}
 
-/* ------------------ Motor Init ------------------ */
-void motor_init() {
-    // Set direction of control pins
-    SET_BIT(IN1_DDR, IN1_PIN);
-    SET_BIT(IN2_DDR, IN2_PIN);
-    SET_BIT(IN3_DDR, IN3_PIN);
-    SET_BIT(IN4_DDR, IN4_PIN);
-    SET_BIT(ENA_DDR, ENA_PIN);
-    SET_BIT(ENB_DDR, ENB_PIN);
+void uart_print(const char* str) {
+    while (*str) uart_transmit(*str++);
+}
 
-    // Timer0 PWM setup (Fast PWM, non-inverting, prescaler 8)
-    TCCR0A |= (1 << WGM00) | (1 << WGM01);        // Fast PWM mode
-    TCCR0A |= (1 << COM0A1) | (1 << COM0B1);      // Non-inverting on OC0A and OC0B
-    TCCR0B |= (1 << CS01);                        // Prescaler 8
+void uart_print_num(uint16_t num) {
+    char buffer[10];
+    itoa(num, buffer, 10);
+    uart_print(buffer);
 }
 
 /* ------------------ Motor Control ------------------ */
-void motor_set_left(uint8_t speed, uint8_t dir) {
-    if (dir) {
-        SET_BIT(IN3_PORT, IN3_PIN);
-        CLEAR_BIT(IN4_PORT, IN4_PIN);
-    } else {
-        CLEAR_BIT(IN3_PORT, IN3_PIN);
-        SET_BIT(IN4_PORT, IN4_PIN);
-    }
-    OCR0B = speed; // Set PWM for left motor (ENB)
+void motor_init() {
+    DDRD |= (1 << IN1_PIN) | (1 << IN2_PIN) | (1 << IN3_PIN) | (1 << IN4_PIN) | (1 << ENA_PIN) | (1 << ENB_PIN);
+
+    // Timer0 PWM
+    TCCR0A |= (1 << WGM00) | (1 << WGM01); // Fast PWM
+    TCCR0A |= (1 << COM0A1) | (1 << COM0B1); // non-inverting
+    TCCR0B |= (1 << CS01); // Prescaler 8
 }
 
-void motor_set_right(uint8_t speed, uint8_t dir) {
-    if (dir) {
-        SET_BIT(IN1_PORT, IN1_PIN);
-        CLEAR_BIT(IN2_PORT, IN2_PIN);
+void motor_set_left(uint8_t speed, uint8_t forward) {
+    if (forward) {
+        SET_BIT(PORTD, IN3_PIN);
+        CLEAR_BIT(PORTD, IN4_PIN);
     } else {
-        CLEAR_BIT(IN1_PORT, IN1_PIN);
-        SET_BIT(IN2_PORT, IN2_PIN);
+        CLEAR_BIT(PORTD, IN3_PIN);
+        SET_BIT(PORTD, IN4_PIN);
     }
-    OCR0A = speed; // Set PWM for right motor (ENA)
+    OCR0B = speed;
 }
 
-void motor_move(uint8_t direction, uint8_t speed) {
-    switch (direction) {
-        case DIR_FORWARD:
+void motor_set_right(uint8_t speed, uint8_t forward) {
+    if (forward) {
+        SET_BIT(PORTD, IN1_PIN);
+        CLEAR_BIT(PORTD, IN2_PIN);
+    } else {
+        CLEAR_BIT(PORTD, IN1_PIN);
+        SET_BIT(PORTD, IN2_PIN);
+    }
+    OCR0A = speed;
+}
+
+void motor_move(uint8_t dir, uint8_t speed) {
+    switch (dir) {
+        case 0: // Forward
+            uart_print("FORWARD\r\n");
             motor_set_left(speed, 1);
             motor_set_right(speed, 1);
             break;
-        case DIR_BACKWARD:
+        case 1: // Backward
+            uart_print("BACKWARD\r\n");
             motor_set_left(speed, 0);
             motor_set_right(speed, 0);
             break;
-        case DIR_LEFT:
+        case 2: // Left
+            uart_print("LEFT\r\n");
             motor_set_left(speed, 0);
             motor_set_right(speed, 1);
             break;
-        case DIR_RIGHT:
+        case 3: // Right
+            uart_print("RIGHT\r\n");
             motor_set_left(speed, 1);
             motor_set_right(speed, 0);
             break;
-        case DIR_STOP:
-        default:
+        default: // Stop
+            uart_print("STOP\r\n");
             motor_set_left(0, 1);
             motor_set_right(0, 1);
             break;
     }
 }
 
-/* ------------------ Main Program ------------------ */
+/* ------------------ Ultrasonic ------------------ */
+void ultrasonic_trigger(uint8_t trig_pin) {
+    CLEAR_BIT(PORTB, trig_pin);
+    _delay_us(2);
+    SET_BIT(PORTB, trig_pin);
+    _delay_us(10);
+    CLEAR_BIT(PORTB, trig_pin);
+}
+
+uint16_t ultrasonic_read(uint8_t trig_pin, uint8_t echo_pin) {
+    ultrasonic_trigger(trig_pin);
+
+    while (!READ_BIT(PINB, echo_pin));
+    TCNT1 = 0;
+    TCCR1B = (1 << CS11);
+    while (READ_BIT(PINB, echo_pin));
+    TCCR1B = 0;
+    return TCNT1 / 58;
+}
+
+/* ------------------ Main ------------------ */
 int main(void) {
+    uart_init(103); // 9600 baud
     motor_init();
-    Serial.begin(9600);
+
+    // Set trig as output, echo as input
+    SET_BIT(DDRB, TRIG_PIN);
+    CLEAR_BIT(DDRB, ECHO_PIN);
+
     while (1) {
+        uint16_t dist = ultrasonic_read(TRIG_PIN, ECHO_PIN);
+        uart_print("Distance: ");
+        uart_print_num(dist);
+        uart_print(" cm\r\n");
 
-        for(int i=0;i<=15;i++){
-            motor_move(DIR_FORWARD, 10*i);
-            _delay_ms(100);
-        }
-        for(int i=15;i>=0;i--){
-            motor_move(DIR_FORWARD, 10*i);
-            _delay_ms(100);
-        }
-
-
-        for(int i=0;i<=15;i++){
-            motor_move(DIR_LEFT, 10*i);
-            _delay_ms(100);
-        }
-        for(int i=15;i>=0;i--){
-            motor_move(DIR_LEFT, 10*i);
-            _delay_ms(100);
+        if (dist < 15) {
+            motor_move(4, 0); // Stop
+        } else {
+            motor_move(0, 150); // Forward
         }
 
-
-        for(int i=0;i<=15;i++){
-            motor_move(DIR_BACKWARD, 10*i);
-            _delay_ms(100);
-        }
-        for(int i=15;i>=0;i--){
-            motor_move(DIR_BACKWARD, 10*i);
-            _delay_ms(100);
-        }
-
-         for(int i=0;i<=15;i++){
-            motor_move(DIR_RIGHT, 10*i);
-            _delay_ms(100);
-        }
-        for(int i=15;i>=0;i--){
-            motor_move(DIR_RIGHT, 10*i);
-            _delay_ms(100);
-        }
-    
-
-        Serial.println("STOP");
-        motor_move(DIR_STOP, 0);
-        _delay_ms(1000);
+        _delay_ms(300);
     }
 }
