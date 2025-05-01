@@ -17,11 +17,13 @@
 #define ENB_PIN PD7
 
 #define FRONT_TRIG_PIN PB1
-#define FRONT_ECHO_PIN PB0
+#define FRONT_ECHO_PIN PB0 // polling
+
 #define RIGHT_TRIG_PIN PB3
-#define RIGHT_ECHO_PIN PB2
+#define RIGHT_ECHO_PIN PD3 // INT1
+
 #define LEFT_TRIG_PIN  PB5
-#define LEFT_ECHO_PIN  PB4
+#define LEFT_ECHO_PIN  PD2 // INT0
 
 /* ------------------ States ------------------ */
 typedef enum {
@@ -119,6 +121,10 @@ void motor_move(uint8_t dir, uint8_t speed) {
 }
 
 /* ------------------ Ultrasonic ------------------ */
+volatile uint16_t right_distance = 0;
+volatile uint16_t left_distance = 0;
+volatile uint8_t edge_right = 0;
+volatile uint8_t edge_left = 0;
 void ultrasonic_trigger(uint8_t trig_pin) {
     CLEAR_BIT(PORTB, trig_pin);
     _delay_us(2);
@@ -127,9 +133,8 @@ void ultrasonic_trigger(uint8_t trig_pin) {
     CLEAR_BIT(PORTB, trig_pin);
 }
 
-uint16_t ultrasonic_read(uint8_t trig_pin, uint8_t echo_pin) {
+uint16_t ultrasonic_read_polling(uint8_t trig_pin, uint8_t echo_pin) {
     ultrasonic_trigger(trig_pin);
-
     while (!READ_BIT(PINB, echo_pin));
     TCNT1 = 0;
     TCCR1B = (1 << CS11);
@@ -138,11 +143,59 @@ uint16_t ultrasonic_read(uint8_t trig_pin, uint8_t echo_pin) {
     return TCNT1 / 58;
 }
 
+void ultrasonic_init_interrupts() {
+    EICRA |= (1 << ISC00) | (1 << ISC10); // any change on INT0, INT1
+    EIMSK |= (1 << INT0) | (1 << INT1);   // enable INT0, INT1
+
+    TCCR1A = 0; // normal mode
+    sei();      // global interrupt enable
+}
+
+void ultrasonic_measure_right() {
+    edge_right = 0;
+    ultrasonic_trigger(RIGHT_TRIG_PIN);
+    while (edge_right < 2);
+}
+
+void ultrasonic_measure_left() {
+    edge_left = 0;
+    ultrasonic_trigger(LEFT_TRIG_PIN);
+    while (edge_left < 2);
+}
+
+ISR(INT1_vect) {
+    static uint16_t timer;
+    if (edge_right == 0) {
+        TCNT1 = 0;
+        TCCR1B |= (1 << CS11);
+        edge_right = 1;
+    } else {
+        TCCR1B = 0;
+        timer = TCNT1;
+        right_distance = timer / 58;
+        edge_right = 2;
+    }
+}
+
+ISR(INT0_vect) {
+    static uint16_t timer;
+    if (edge_left == 0) {
+        TCNT1 = 0;
+        TCCR1B |= (1 << CS11);
+        edge_left = 1;
+    } else {
+        TCCR1B = 0;
+        timer = TCNT1;
+        left_distance = timer / 58;
+        edge_left = 2;
+    }
+}
+
 /* ------------------ Main ------------------ */
 int main(void) {
     uart_init(103);
     motor_init();
-
+    ultrasonic_init_interrupts();
     DDRB |= (1 << FRONT_TRIG_PIN) | (1 << RIGHT_TRIG_PIN) | (1 << LEFT_TRIG_PIN);
     DDRB &= ~((1 << FRONT_ECHO_PIN) | (1 << RIGHT_ECHO_PIN) | (1 << LEFT_ECHO_PIN));
 
@@ -150,9 +203,11 @@ int main(void) {
     uint16_t front, right, left;
 
     while (1) {
-        front = ultrasonic_read(FRONT_TRIG_PIN, FRONT_ECHO_PIN);
-        right = ultrasonic_read(RIGHT_TRIG_PIN, RIGHT_ECHO_PIN);
-        left  = ultrasonic_read(LEFT_TRIG_PIN, LEFT_ECHO_PIN);
+        front = ultrasonic_read_polling(FRONT_TRIG_PIN, FRONT_ECHO_PIN);
+        ultrasonic_measure_right();
+        right = right_distance;
+        ultrasonic_measure_left();
+        left  = left_distance;
 
         uart_print("F: "); uart_print_num(front);
         uart_print(" R: "); uart_print_num(right);
@@ -173,10 +228,18 @@ int main(void) {
                 break;
 
             case STATE_DETECT_GAP:
-                _delay_ms(300);
-                uint16_t right_check = ultrasonic_read(RIGHT_TRIG_PIN, RIGHT_ECHO_PIN);
-                uint16_t left_check  = ultrasonic_read(LEFT_TRIG_PIN, LEFT_ECHO_PIN);
-                if (right_check > 30 || left_check > 30) {
+
+                motor_move(0, 100);
+                _delay_ms(500);
+                motor_move(4, 0);
+                _delay_ms(200);
+                
+                ultrasonic_measure_right();
+                right = right_distance;
+                ultrasonic_measure_left();
+                left  = left_distance;
+
+                if (right > 30 || left > 30) {
                     state = STATE_PARKING;
                 } else {
                     state = STATE_FORWARD;
