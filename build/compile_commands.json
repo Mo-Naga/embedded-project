@@ -1,0 +1,20 @@
+[
+{
+  "directory": "D:/Study/CMP/Third year/Second Term/embedded/Project/embedded-project/build",
+  "command": "avr-gcc -I\"D:/Study/CMP/Third year/Second Term/embedded/Project/embedded-project\" -Wall -Os -DF_CPU=16000000UL -mmcu=atmega328p -g -o CMakeFiles\\AVR_Robot.elf.dir\\main.c.obj -c \"D:\\Study\\CMP\\Third year\\Second Term\\embedded\\Project\\embedded-project\\main.c\"",
+  "file": "D:\\Study\\CMP\\Third year\\Second Term\\embedded\\Project\\embedded-project\\main.c",
+  "output": "CMakeFiles\\AVR_Robot.elf.dir\\main.c.obj"
+},
+{
+  "directory": "D:/Study/CMP/Third year/Second Term/embedded/Project/embedded-project/build",
+  "command": "avr-gcc -I\"D:/Study/CMP/Third year/Second Term/embedded/Project/embedded-project\" -Wall -Os -DF_CPU=16000000UL -mmcu=atmega328p -g -o CMakeFiles\\AVR_Robot.elf.dir\\motor.c.obj -c \"D:\\Study\\CMP\\Third year\\Second Term\\embedded\\Project\\embedded-project\\motor.c\"",
+  "file": "D:\\Study\\CMP\\Third year\\Second Term\\embedded\\Project\\embedded-project\\motor.c",
+  "output": "CMakeFiles\\AVR_Robot.elf.dir\\motor.c.obj"
+},
+{
+  "directory": "D:/Study/CMP/Third year/Second Term/embedded/Project/embedded-project/build",
+  "command": "avr-gcc -I\"D:/Study/CMP/Third year/Second Term/embedded/Project/embedded-project\" -Wall -Os -DF_CPU=16000000UL -mmcu=atmega328p -g -o CMakeFiles\\AVR_Robot.elf.dir\\ultrasonic.c.obj -c \"D:\\Study\\CMP\\Third year\\Second Term\\embedded\\Project\\embedded-project\\ultrasonic.c\"",
+  "file": "D:\\Study\\CMP\\Third year\\Second Term\\embedded\\Project\\embedded-project\\ultrasonic.c",
+  "output": "CMakeFiles\\AVR_Robot.elf.dir\\ultrasonic.c.obj"
+}
+]
