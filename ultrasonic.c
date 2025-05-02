@@ -1,3 +1,4 @@
+
 #define F_CPU 16000000UL
 #include <avr/io.h>
 #include <util/delay.h>
@@ -13,100 +14,148 @@
 #define READ_PORT(PORT_NAME)              (PORT_NAME & 0xFF)
 
 /* ------------------ Pin Definitions ------------------ */
+
 // Motor A (Right)
+#define IN1_PORT PORTD
+#define IN1_DDR  DDRD
 #define IN1_PIN  PD2
+
+#define IN2_PORT PORTD
+#define IN2_DDR  DDRD
 #define IN2_PIN  PD3
+
+#define ENA_DDR  DDRD
 #define ENA_PIN  PD6  // OC0A
 
 // Motor B (Left)
+#define IN3_PORT PORTD
+#define IN3_DDR  DDRD
 #define IN3_PIN  PD4
-#define IN4_PIN  PD5
-#define ENB_PIN  PD7  // OC0B
+
+#define IN4_PORT PORTD
+#define IN4_DDR  DDRD
+#define IN4_PIN  PD7
+
+#define ENB_DDR  DDRD
+#define ENB_PIN  PD5  // OC0B
+
 
 // Ultrasonic
-#define TRIG_PIN PB0
-#define ECHO_PIN PB1
+#define FRONT_TRIG_PIN PB1
+#define FRONT_ECHO_PIN PB0
 
-/* ------------------ UART Functions ------------------ */
-void uart_init(unsigned int ubrr) {
-    UBRR0H = (unsigned char)(ubrr >> 8);
-    UBRR0L = (unsigned char)(ubrr);
-    SET_BIT(UCSR0B, RXEN0);
-    SET_BIT(UCSR0B, TXEN0);
-    UCSR0C = (1 << UCSZ01) | (1 << UCSZ00); // 8-bit data
+#define RIGHT_TRIG_PIN PB3
+#define RIGHT_ECHO_PIN PB2
+
+#define LEFT_TRIG_PIN PB5
+#define LEFT_ECHO_PIN PB4 
+
+/* ------------------ Direction Macros ------------------ */
+#define DIR_FORWARD  0
+#define DIR_BACKWARD 1
+#define DIR_LEFT     2
+#define DIR_RIGHT    3
+#define DIR_STOP     4
+
+/* ------------------ Function Prototypes ------------------ */
+void motor_init();
+void motor_set_left(uint8_t speed, uint8_t dir);
+void motor_set_right(uint8_t speed, uint8_t dir);
+void motor_move(uint8_t direction, uint8_t speed);
+void uart_init();
+void uart_transmit(char data);
+char uart_receive();
+void ultrasonic_trigger(uint8_t trig_pin);
+uint16_t ultrasonic_read(uint8_t trig_pin, uint8_t echo_pin);
+
+
+/* ------------------ UART Init ------------------ */
+void uart_init() {
+    // Baud Rate = 9600
+    uint16_t ubrr = 103;
+    UBRR0H = (ubrr >> 8);
+    UBRR0L = ubrr;
+
+    UCSR0B = (1 << RXEN0) | (1 << TXEN0); // Enable receiver and transmitter
+    UCSR0C = (1 << UCSZ01) | (1 << UCSZ00); // 8-bit data, 1 stop bit
 }
 
 void uart_transmit(char data) {
-    while (!(UCSR0A & (1 << UDRE0)));
+    while (!(UCSR0A & (1 << UDRE0))); // Wait until buffer is empty
     UDR0 = data;
 }
 
-void uart_print(const char* str) {
-    while (*str) uart_transmit(*str++);
+
+char uart_receive() {
+    while (!(UCSR0A & (1 << RXC0))); // Wait until data is received
+    return UDR0;
 }
 
-void uart_print_num(uint16_t num) {
-    char buffer[10];
-    itoa(num, buffer, 10);
-    uart_print(buffer);
+
+void uart_print(const char* str) {
+    while (*str) {
+        uart_transmit(*str++);
+    }
+}
+
+/* ------------------ Motor Init ------------------ */
+void motor_init() {
+    SET_BIT(IN1_DDR, IN1_PIN);
+    SET_BIT(IN2_DDR, IN2_PIN);
+    SET_BIT(IN3_DDR, IN3_PIN);
+    SET_BIT(IN4_DDR, IN4_PIN);
+    SET_BIT(ENA_DDR, ENA_PIN);
+    SET_BIT(ENB_DDR, ENB_PIN);
+
+    // Timer0 Fast PWM mode, non-inverting, prescaler 64
+    TCCR0A |= (1 << WGM00) | (1 << WGM01);
+    TCCR0A |= (1 << COM0A1) | (1 << COM0B1);
+    TCCR0B |= (1 << CS01) | (1 << CS00);
 }
 
 /* ------------------ Motor Control ------------------ */
-void motor_init() {
-    DDRD |= (1 << IN1_PIN) | (1 << IN2_PIN) | (1 << IN3_PIN) | (1 << IN4_PIN) | (1 << ENA_PIN) | (1 << ENB_PIN);
-
-    // Timer0 PWM
-    TCCR0A |= (1 << WGM00) | (1 << WGM01); // Fast PWM
-    TCCR0A |= (1 << COM0A1) | (1 << COM0B1); // non-inverting
-    TCCR0B |= (1 << CS01); // Prescaler 8
-}
-
-void motor_set_left(uint8_t speed, uint8_t forward) {
-    if (forward) {
-        SET_BIT(PORTD, IN3_PIN);
-        CLEAR_BIT(PORTD, IN4_PIN);
+void motor_set_left(uint8_t speed, uint8_t dir) {
+    if (dir) {
+        SET_BIT(IN3_PORT, IN3_PIN);
+        CLEAR_BIT(IN4_PORT, IN4_PIN);
     } else {
-        CLEAR_BIT(PORTD, IN3_PIN);
-        SET_BIT(PORTD, IN4_PIN);
+        CLEAR_BIT(IN3_PORT, IN3_PIN);
+        SET_BIT(IN4_PORT, IN4_PIN);
     }
     OCR0B = speed;
 }
 
-void motor_set_right(uint8_t speed, uint8_t forward) {
-    if (forward) {
-        SET_BIT(PORTD, IN1_PIN);
-        CLEAR_BIT(PORTD, IN2_PIN);
+void motor_set_right(uint8_t speed, uint8_t dir) {
+    if (dir) {
+        SET_BIT(IN1_PORT, IN1_PIN);
+        CLEAR_BIT(IN2_PORT, IN2_PIN);
     } else {
-        CLEAR_BIT(PORTD, IN1_PIN);
-        SET_BIT(PORTD, IN2_PIN);
+        CLEAR_BIT(IN1_PORT, IN1_PIN);
+        SET_BIT(IN2_PORT, IN2_PIN);
     }
     OCR0A = speed;
 }
 
-void motor_move(uint8_t dir, uint8_t speed) {
-    switch (dir) {
-        case 0: // Forward
-            uart_print("FORWARD\r\n");
+void motor_move(uint8_t direction, uint8_t speed) {
+    switch (direction) {
+        case DIR_FORWARD:
             motor_set_left(speed, 1);
             motor_set_right(speed, 1);
             break;
-        case 1: // Backward
-            uart_print("BACKWARD\r\n");
+        case DIR_BACKWARD:
             motor_set_left(speed, 0);
             motor_set_right(speed, 0);
             break;
-        case 2: // Left
-            uart_print("LEFT\r\n");
+        case DIR_LEFT:
             motor_set_left(speed, 0);
             motor_set_right(speed, 1);
             break;
-        case 3: // Right
-            uart_print("RIGHT\r\n");
+        case DIR_RIGHT:
             motor_set_left(speed, 1);
             motor_set_right(speed, 0);
             break;
-        default: // Stop
-            uart_print("STOP\r\n");
+        case DIR_STOP:
+        default:
             motor_set_left(0, 1);
             motor_set_right(0, 1);
             break;
@@ -130,30 +179,51 @@ uint16_t ultrasonic_read(uint8_t trig_pin, uint8_t echo_pin) {
     TCCR1B = (1 << CS11);
     while (READ_BIT(PINB, echo_pin));
     TCCR1B = 0;
-    return TCNT1 / 58;
+    return TCNT1 / 117;
 }
 
-/* ------------------ Main ------------------ */
+
+/* ------------------ Main Program ------------------ */
 int main(void) {
-    uart_init(103); // 9600 baud
-    motor_init();
+   // motor_init();
+    uart_init();
 
-    // Set trig as output, echo as input
-    SET_BIT(DDRB, TRIG_PIN);
-    CLEAR_BIT(DDRB, ECHO_PIN);
+    uint8_t speed = 200;  // default speed
 
-    while (1) {
-        uint16_t dist = ultrasonic_read(TRIG_PIN, ECHO_PIN);
-        uart_print("Distance: ");
-        uart_print_num(dist);
+     // Set Trigger as output and Echo as input
+    SET_BIT(DDRB, FRONT_TRIG_PIN);  // Trigger pin (e.g., PB1)
+    CLEAR_BIT(DDRB, FRONT_ECHO_PIN); // Echo pin (e.g., PB0)
+
+     // Set Trigger as output and Echo as input
+    SET_BIT(DDRB, RIGHT_TRIG_PIN);  // Trigger pin (e.g., PB1)
+    CLEAR_BIT(DDRB, RIGHT_ECHO_PIN); // Echo pin (e.g., PB0)
+
+      // Set Trigger as output and Echo as input
+      SET_BIT(DDRB, LEFT_TRIG_PIN);  // Trigger pin (e.g., PB1)
+      CLEAR_BIT(DDRB, LEFT_ECHO_PIN); // Echo pin (e.g., PB0)
+ while (1) {
+        uint16_t distance_back = ultrasonic_read(FRONT_TRIG_PIN, FRONT_ECHO_PIN);
+        uint16_t distance_right = ultrasonic_read(RIGHT_TRIG_PIN, RIGHT_ECHO_PIN);
+        uint16_t distance_left = ultrasonic_read(LEFT_TRIG_PIN, LEFT_ECHO_PIN);
+        char buffer[10];
+        itoa(distance_back, buffer, 10);
+
+        uart_print("Distance Back: ");
+        uart_print(buffer);
+        uart_print(" cm\r\n");
+        
+        itoa(distance_right, buffer, 10);
+
+        uart_print("Distance Right: ");
+        uart_print(buffer);
         uart_print(" cm\r\n");
 
-        if (dist < 15) {
-            motor_move(4, 0); // Stop
-        } else {
-            motor_move(0, 150); // Forward
-        }
+        itoa(distance_left, buffer, 10);
 
-        _delay_ms(300);
+        uart_print("Distance Left: ");
+        uart_print(buffer);
+        uart_print(" cm\r\n");
+
+        _delay_ms(1000);
     }
 }
